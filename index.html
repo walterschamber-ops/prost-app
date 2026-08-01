@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Prost! — Carta y Pedidos</title>
+<link rel="icon" href="data:,">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+
+// URL del Apps Script conectado a la planilla "Pedidos Prost" (Google Sheets)
+const SHEETS_WEBAPP_URL =
+  "https://script.google.com/macros/s/AKfycbyd6UXQgYfaBKborV4RbtfEY7xlo5Kjh_f1t4n0RbYgxcK4F7WNGG6m-v1BgVwG6Y4e/exec";
+
+const PAYMENT_METHODS = [
+  { id: "alias", label: "Alias", emoji: "🏦" },
+  { id: "efectivo", label: "Efectivo", emoji: "💵" },
+];
+
+// ---------- CARTA ----------
+// Cada producto puede tener una o varias "variantes" (tamaño/formato + precio).
+const MENU = [
+  {
+    category: "Papas Fritas",
+    items: [
+      {
+        id: "papas_baston",
+        name: "Papas bastón fritas (no congeladas)",
+        desc: "",
+        variants: [
+          { label: "Media porción", price: 8000 },
+          { label: "Porción", price: 10000 },
+        ],
+      },
+      {
+        id: "papas_prost",
+        name: "Papas Prost",
+        desc: "Con salsa de cuatro quesos, panceta ahumada y cebolla de verdeo",
+        variants: [
+          { label: "Media porción", price: 11000 },
+          { label: "Porción", price: 14000 },
+        ],
+      },
+      {
+        id: "papas_cheddar",
+        name: "Papas cheddar",
+        desc: "Con cheddar fundido, panceta ahumada dorada y verdeo",
+        variants: [{ label: "Porción", price: 14000 }],
+      },
+      {
+        id: "papas_veggie",
+        name: "Papas veggie",
+        desc: "Con salsa de cuatro quesos y salteado de cebollas de verdeo",
+        variants: [{ label: "Porción", price: 14000 }],
+      },
+    ],
+  },
+  {
+    category: "Piqueos y Fritos",
+    items: [
+      { id: "nuggets", name: "Nuggets", desc: "Bocaditos de pollo crocantes", variants: [{ label: "Porción", price: 16000 }] },
+      {
+        id: "rabas",
+        name: "Rabas",
+        desc: "Anillos de calamar rebozados y fritos",
+        variants: [
+          { label: "Media porción", price: 23000 },
+          { label: "Porción", price: 32000 },
+        ],
+      },
+      { id: "nachos", name: "Nachos", desc: "Nachos de maíz con salsa de queso cheddar", variants: [{ label: "Porción", price: 13000 }] },
+      { id: "bastones_mozz", name: "Bastones de mozzarella", desc: "Mozzarella cortada en bastones, rebozados y fritos", variants: [{ label: "Porción", price: 14000 }] },
+      { id: "tostados", name: "Tostados", desc: "De jamón cocido y queso", variants: [{ label: "Porción", price: 15000 }] },
+      { id: "aros_cebolla", name: "Aros de cebolla", desc: "Aros de cebolla rebozados y fritos", variants: [{ label: "Porción", price: 12000 }] },
+      { id: "tortilla_papas", name: "Tortilla de papas", desc: "Con cebolla de verdeo", variants: [{ label: "Porción", price: 15000 }] },
+      { id: "tortilla_gratinada", name: "Tortilla de papas gratinada", desc: "Con cebolla de verdeo recubierta con queso gratinado", variants: [{ label: "Porción", price: 15500 }] },
+      { id: "empanada_carne", name: "Empanada de carne", desc: "De lomo cortado a cuchillo, con cebolla, pimiento y huevo (frita o al horno)", variants: [{ label: "Unidad", price: 2500 }] },
+      { id: "empanada_verdura", name: "Empanada de verdura", desc: "De zucchini, cebolla y queso (frita o al horno)", variants: [{ label: "Unidad", price: 2500 }] },
+      { id: "empanada_jyq", name: "Empanada de jamón y queso", desc: "De jamón cocido y queso (frita o al horno)", variants: [{ label: "Unidad", price: 2500 }] },
+      {
+        id: "empanadas_docena",
+        name: "Empanadas por docena",
+        desc: "Elegí la variedad al agregar al carrito",
+        variants: [
+          { label: "Media docena", price: 14000 },
+          { label: "Docena", price: 24000 },
+        ],
+        needsNote: true,
+        notePlaceholder: "Ej: 6 de carne, 6 de jamón y queso",
+      },
+      { id: "pollo_frito", name: "Pollo frito", desc: "Pechuga de pollo trozada, rebozada y frita", variants: [{ label: "Porción", price: 14000 }] },
+      { id: "tequenos", name: "Tequeños", desc: "Seis tequeños con salsa picante y mayonesa de ajo", variants: [{ label: "Porción", price: 16000 }] },
+    ],
+  },
+  {
+    category: "Tablas para Compartir",
+    items: [
+      {
+        id: "tabla_prost",
+        name: "Tabla Prost",
+        desc: "Jamón cocido, jamón crudo, salame, bondiola, lomo ahumado, Knackwurst (salchicha alemana ahumada), PentalHaus y Cracovia (fiambres ahumados alemanes), queso pategrás, olivas verdes y negras, escabeche de pollo",
+        variants: [{ label: "Para compartir", price: 33000 }],
+      },
+      {
+        id: "molino_fenix",
+        name: "Molino Fénix",
+        desc: "Jamón crudo, jamón cocido, salame, bondiola, lomo ahumado, queso pategrás, queso dambo, queso azul, olivas verdes y negras y cerezas con queso",
+        variants: [{ label: "Para compartir", price: 33000 }],
+      },
+    ],
+  },
+  {
+    category: "Cervezas Artesanales (por litro)",
+    note: "El precio es por litro. Al recibir el pedido hay que devolver el envase (vidrio o plástico, según corresponda).",
+    items: [
+      {
+        id: "gran_lady",
+        name: "Gran Lady — Golden Ale",
+        desc: "Color dorado pálido, aroma delicado y cuerpo suave, muy refrescante",
+        variants: [{ label: "Litro", price: 6000 }],
+      },
+      {
+        id: "cerro_colorado",
+        name: "Cerro Colorado — Irish Red Ale",
+        desc: "Estilo irlandés, color rojizo, aroma a caramelo y cuerpo suave",
+        variants: [{ label: "Litro", price: 6000 }],
+      },
+      {
+        id: "bb_king",
+        name: "BB King — Porter",
+        desc: "Estilo inglés, color oscuro casi negro, notas a café, bajo amargor",
+        variants: [{ label: "Litro", price: 6000 }],
+      },
+      {
+        id: "callecipa",
+        name: "CallecIPA Angosta — American IPA",
+        desc: "Ale americana pálida, lupulada y amarga, con buen soporte de maltas",
+        variants: [{ label: "Litro", price: 7000 }],
+      },
+      {
+        id: "aguijon",
+        name: "Aguijón — Honey",
+        desc: "Color dorado intenso, elaborada con miel, algo más alcohólica",
+        variants: [{ label: "Litro", price: 7000 }],
+      },
+      {
+        id: "sin_alcohol",
+        name: "Cerveza sin alcohol",
+        desc: "",
+        variants: [{ label: "Lata", price: 6500 }],
+      },
+      {
+        id: "amber_ale",
+        name: "American Amber Ale",
+        desc: "Color ámbar, lupulada, sabor maltoso a caramelo, notas cítricas",
+        variants: [{ label: "Litro", price: 7000 }],
+      },
+      {
+        id: "sin_gluten",
+        name: "Cerveza sin gluten",
+        desc: "Sin TACC o gluten removido, según disponibilidad",
+        variants: [{ label: "Lata", price: 6500 }],
+      },
+      {
+        id: "catharina_sour",
+        name: "Catharina Sour con frambuesas",
+        desc: "Levemente ácida, bajo alcohol, notable aroma a frambuesa",
+        variants: [{ label: "Litro", price: 7000 }],
+      },
+      {
+        id: "stout",
+        name: "Stout",
+        desc: "Cerveza de guarda, negra, alta complejidad de maltas",
+        variants: [{ label: "Litro", price: 6000 }],
+      },
+    ],
+  },
+  {
+    category: "Pizzas",
+    items: [
+      { id: "pz_mozzarella", name: "Mozzarella", desc: "Salsa de tomate, mozzarella y olivas verdes", variants: [{ label: "4 porciones", price: 13000 }, { label: "8 porciones", price: 19000 }] },
+      { id: "pz_jamon_morrones", name: "Jamón y morrones", desc: "Mozzarella, jamón cocido, morrones asados y olivas verdes", variants: [{ label: "4 porciones", price: 14000 }, { label: "8 porciones", price: 22000 }] },
+      { id: "pz_prost", name: "Prost", desc: "Mozzarella, Knackwurst (salchicha alemana ahumada) y olivas negras", variants: [{ label: "4 porciones", price: 15000 }, { label: "8 porciones", price: 23000 }] },
+      { id: "pz_fugazzeta", name: "Fugazzeta", desc: "Mozzarella, cebolla salteada y olivas negras", variants: [{ label: "4 porciones", price: 15000 }, { label: "8 porciones", price: 21000 }] },
+      { id: "pz_napolitana", name: "Napolitana", desc: "Mozzarella, tomates frescos, ajo y olivas verdes", variants: [{ label: "4 porciones", price: 14000 }, { label: "8 porciones", price: 21000 }] },
+      { id: "pz_calabresa", name: "Calabresa", desc: "Mozzarella, longaniza y olivas verdes", variants: [{ label: "4 porciones", price: 14000 }, { label: "8 porciones", price: 22000 }] },
+      { id: "pz_palmitos", name: "Palmitos", desc: "Mozzarella, palmitos, salsa golf y olivas verdes", variants: [{ label: "4 porciones", price: 17000 }, { label: "8 porciones", price: 24000 }] },
+      { id: "pz_rucula_crudo", name: "Rúcula y jamón crudo", desc: "Mozzarella, rúcula, jamón crudo y olivas negras", variants: [{ label: "4 porciones", price: 15000 }, { label: "8 porciones", price: 24000 }] },
+      { id: "pz_panceta", name: "Panceta", desc: "Mozzarella, panceta ahumada, huevo duro, verdeo y olivas negras", variants: [{ label: "4 porciones", price: 16000 }, { label: "8 porciones", price: 24000 }] },
+      { id: "pz_champis", name: "Champiñones", desc: "Mozzarella, cebolla, pimiento, champiñones salteados y olivas verdes", variants: [{ label: "4 porciones", price: 15000 }, { label: "8 porciones", price: 24000 }] },
+      { id: "pz_pollo_bbq", name: "Pollo BBQ", desc: "Mozzarella, cebolla, pimiento, verdeo, pollo, salsa barbacoa y olivas negras", variants: [{ label: "4 porciones", price: 16000 }, { label: "8 porciones", price: 21000 }] },
+      { id: "pz_pepperoni", name: "Pepperoni", desc: "Mozzarella, pepperoni y olivas verdes", variants: [{ label: "4 porciones", price: 15000 }, { label: "8 porciones", price: 24000 }] },
+      { id: "pz_4quesos", name: "Cuatro quesos", desc: "Mozzarella, queso azul, provolone, sardo y olivas negras", variants: [{ label: "4 porciones", price: 15000 }, { label: "8 porciones", price: 22000 }] },
+      { id: "pz_hawaiana", name: "Hawaiana", desc: "Mozzarella, jamón cocido, ananá, morrones asados y olivas verdes", variants: [{ label: "4 porciones", price: 18000 }, { label: "8 porciones", price: 24000 }] },
+      { id: "pz_especial", name: "Especial", desc: "Mozzarella, jamón cocido, morrones asados, olivas verdes (anchoas o huevo rallado)", variants: [{ label: "4 porciones", price: 15000 }, { label: "8 porciones", price: 23000 }] },
+    ],
+  },
+  {
+    category: "Sandwiches y Lomos",
+    items: [
+      { id: "lomo_prost", name: "Lomo Prost", desc: "Lomo vacuno, jamón cocido, rúcula, tomate, panceta ahumada, verdeo, huevo. Con papas fritas", variants: [{ label: "Sandwich", price: 21000 }] },
+      { id: "lomo_fenix", name: "Lomo Fénix", desc: "Lomo vacuno, queso, jamón cocido, lechuga, tomate, hongos, cebolla, morrón, palta, huevo. Con papas fritas", variants: [{ label: "Sandwich", price: 21000 }] },
+      { id: "lomo_molino", name: "Lomo Molino", desc: "Lomo vacuno, queso cheddar, jamón cocido, lechuga, tomate, panceta salteada, huevo. Con papas fritas", variants: [{ label: "Sandwich", price: 21000 }] },
+      { id: "hamb_prost", name: "Hamburguesa Prost", desc: "Medallón 180g, lechuga, tomate, huevo, jamón, queso, panceta ahumada con verdeo y morrón. Con papas Prost", variants: [{ label: "Sandwich", price: 19000 }] },
+      { id: "hamb_molino", name: "Hamburguesa Molino", desc: "Hamburguesa casera, queso cheddar, jamón cocido, lechuga, tomate, panceta salteada y huevo. Con papas cheddar", variants: [{ label: "Sandwich", price: 19000 }] },
+      { id: "hamb_veggie", name: "Hamburguesa Veggie", desc: "Medallón vegetariano, lechuga, tomate, hummus de garbanzo. Con papas veggie o ensalada", variants: [{ label: "Sandwich", price: 16000 }] },
+      { id: "barroluco_prost", name: "Barroluco Prost", desc: "Pan de miga, lomo vacuno, queso, jamón cocido, lechuga, tomate, huevo, queso gratinado. Con papas fritas", variants: [{ label: "Sandwich", price: 22000 }] },
+      { id: "sandwich_veggie", name: "Sandwich vegetariano", desc: "Pan de salvado, berenjenas y zucchini asado, rúcula, tomate, hummus de garbanzos. Con papas fritas", variants: [{ label: "Sandwich", price: 16000 }] },
+      { id: "sandwich_bondiola", name: "Sandwich de Bondiola", desc: "Bondiola mechada, salsa criolla, mayonesa de ajo y papas fritas", variants: [{ label: "Sandwich", price: 17000 }] },
+      { id: "pancho_prost", name: "Pancho Prost", desc: "Salchicha alemana, tomates, pimiento rojo, olivas negras, queso parmesano", variants: [{ label: "Sandwich", price: 13000 }] },
+    ],
+  },
+  {
+    category: "Ensaladas",
+    items: [
+      { id: "ensalada_prost", name: "Ensalada Prost", desc: "Lechuga o rúcula, pollo en cubos, tomates cherry, huevo duro y almendras", variants: [{ label: "Porción", price: 14000 }] },
+      { id: "ensalada_molino_fenix", name: "Ensalada Molino Fénix", desc: "Hojas verdes, tomates en cubos, mozzarella, olivas y palta", variants: [{ label: "Porción", price: 14000 }] },
+      { id: "ensalada_caesar", name: "Caesar con pollo", desc: "Hojas verdes, cubos de pan tostados con aceite de oliva, parmesano rallado, cubos de pollo a la plancha, semillas y salsa Caesar", variants: [{ label: "Porción", price: 16000 }] },
+    ],
+  },
+  {
+    category: "Menú Sin TACC",
+    items: [
+      { id: "st_pizza_individual", name: "Pizza individual", desc: "Con mozzarella y jamón cocido", variants: [{ label: "Pizza", price: 17000 }] },
+      { id: "st_empanada_carne", name: "Empanadas de carne (sin TACC)", desc: "3 empanadas de carne con masa sin TACC", variants: [{ label: "Porción", price: 17000 }] },
+      { id: "st_empanada_jyq", name: "Empanadas de jamón y queso (sin TACC)", desc: "3 empanadas de jamón cocido y queso con masa sin TACC", variants: [{ label: "Porción", price: 17000 }] },
+      { id: "st_tarta_tomates", name: "Tarta Sin TACC de Tomates", desc: "Tomates secos, tomates frescos, albahaca y queso", variants: [{ label: "Plato", price: 17000 }] },
+      { id: "st_tarta_brocoli", name: "Tarta Sin TACC de Brócoli", desc: "Brócoli, jamón y queso", variants: [{ label: "Plato", price: 17000 }] },
+    ],
+  },
+  {
+    category: "Promos Delivery",
+    items: [
+      { id: "prom1_empanadas", name: "Promo 1 — Docena de Empanadas", desc: "12 empanadas a elección", variants: [{ label: "Promo", price: 22000 }], needsNote: true, notePlaceholder: "Ej: 6 de carne, 6 de jamón y queso" },
+      { id: "prom2_hamburguesas", name: "Promo 2 — 2 Hamburguesas", desc: "2 hamburguesas a elección", variants: [{ label: "Promo", price: 33000 }], needsNote: true, notePlaceholder: "Ej: 1 Prost, 1 Molino" },
+      { id: "prom3_lomos", name: "Promo 3 — 2 Lomos", desc: "2 lomos a elección", variants: [{ label: "Promo", price: 37000 }], needsNote: true, notePlaceholder: "Ej: 1 Prost, 1 Fénix" },
+      { id: "prom4_papas", name: "Promo 4 — Papas Prost", desc: "1 Papas Prost", variants: [{ label: "Promo", price: 13000 }] },
+    ],
+  },
+];
+
+const PHONE = "5492657640911";
+
+const money = (n) => n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+
+// Paleta central — todo el color de la app vive acá
+const C = {
+  bg: "#1c1410",
+  panel: "#241a13",
+  border: "#3a2e22",
+  cream: "#f2e8d5",
+  creamPanel: "#e9ddc4",
+  creamPanel2: "#e5d8bd",
+  creamBorder: "#d9cbb0",
+  gold: "#c8952a",
+  rust: "#8b3a2f",
+  green: "#4a5d42",
+  muted: "#8a7a68",
+  dark: "#1c1410",
+  disabled: "#b9b3a3",
+};
+
+const { useState, useMemo } = React;
+
+const oswald = { fontFamily: "'Oswald', sans-serif" };
+
+function App() {
+  const [cart, setCart] = useState({}); // { [skuKey]: qty }
+  const [cartOpen, setCartOpen] = useState(false);
+  const [mode, setMode] = useState("bar"); // "bar" | "delivery"
+  const [address, setAddress] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [payment, setPayment] = useState(null); // "alias" | "efectivo"
+  const [notes, setNotes] = useState({}); // { [skuKey]: texto de aclaración }
+  const [generalNote, setGeneralNote] = useState(""); // aclaración general del pedido, opcional
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [lastOrderNumber, setLastOrderNumber] = useState(null);
+  const [rating, setRating] = useState(null);
+  const [comment, setComment] = useState("");
+  const [ratingSent, setRatingSent] = useState(false);
+
+  // Envía el pedido a la planilla de Google Sheets (vía Apps Script) y devuelve el número correlativo + acumulado
+  const submitToSheet = async (record) => {
+    try {
+      const res = await fetch(SHEETS_WEBAPP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(record),
+      });
+      const data = await res.json();
+      if (data && data.ok) return { orderNumber: data.orderNumber, accumulated: data.accumulated };
+      return { orderNumber: null, accumulated: null };
+    } catch {
+      return { orderNumber: null, accumulated: null }; // si falla la conexión, el pedido se manda igual por WhatsApp
+    }
+  };
+
+  const submitFeedback = async () => {
+    if (!rating) return;
+    const now = new Date();
+    // Guarda la calificación y el comentario en la pestaña "Feedback" de la planilla
+    fetch(SHEETS_WEBAPP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "feedback",
+        orderNumber: lastOrderNumber,
+        dateLabel: now.toLocaleDateString("es-AR"),
+        timeLabel: now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }),
+        customer: name,
+        customerPhone: phone,
+        rating,
+        comment: comment.trim(),
+      }),
+    }).catch(() => {});
+    // Aviso corto por WhatsApp al bar
+    const orderTag = lastOrderNumber ? `#${String(lastOrderNumber).padStart(4, "0")}` : "";
+    const commentLine = comment.trim() ? `\n💬 "${comment.trim()}"` : "";
+    const msg = `⭐ Calificación pedido ${orderTag} — ${name}: ${rating}/5${commentLine}`;
+    window.open(`https://wa.me/${PHONE}?text=${encodeURIComponent(msg)}`, "_blank");
+    setRatingSent(true);
+  };
+
+  // Lista plana de SKUs (producto + variante) para buscar por key en el carrito
+  const skuMap = useMemo(() => {
+    const map = {};
+    MENU.forEach((cat) => {
+      cat.items.forEach((item) => {
+        item.variants.forEach((v, i) => {
+          const key = `${item.id}__${i}`;
+          map[key] = {
+            key,
+            displayName: item.variants.length > 1 ? `${item.name} (${v.label})` : item.name,
+            unitLabel: v.label,
+            price: v.price,
+            needsNote: !!item.needsNote,
+            notePlaceholder: item.notePlaceholder || "Aclará tu pedido",
+          };
+        });
+      });
+    });
+    return map;
+  }, []);
+
+  const add = (key) => setCart((c) => ({ ...c, [key]: (c[key] || 0) + 1 }));
+  const remove = (key) =>
+    setCart((c) => {
+      const n = { ...c };
+      if (!n[key]) return n;
+      n[key] -= 1;
+      if (n[key] <= 0) delete n[key];
+      return n;
+    });
+
+  const cartLines = Object.entries(cart)
+    .map(([key, qty]) => ({ sku: skuMap[key], qty }))
+    .filter((l) => l.sku);
+
+  const subtotal = cartLines.reduce((s, l) => s + l.sku.price * l.qty, 0);
+  const totalItems = cartLines.reduce((s, l) => s + l.qty, 0);
+
+  const missingNote = cartLines.some((l) => l.sku.needsNote && !(notes[l.sku.key] || "").trim());
+
+  const canSend =
+    cartLines.length > 0 && name.trim() && phone.trim() && payment && !missingNote && (mode === "bar" || address.trim());
+
+  const sendOrder = async () => {
+    if (!canSend || sending) return;
+    setSending(true);
+
+    const now = new Date();
+    const record = {
+      dateTime: now.toISOString(),
+      dateLabel: now.toLocaleDateString("es-AR"),
+      timeLabel: now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }),
+      customer: name,
+      customerPhone: phone,
+      mode,
+      address: mode === "delivery" ? address : "",
+      payment: PAYMENT_METHODS.find((p) => p.id === payment)?.label || "",
+      items: cartLines
+        .map((l) => `${l.qty}x ${l.sku.displayName}${notes[l.sku.key] ? ` (${notes[l.sku.key]})` : ""}`)
+        .join(" | "),
+      subtotal,
+      generalNote: generalNote.trim(),
+    };
+
+    const { orderNumber } = await submitToSheet(record);
+
+    const orderTag = orderNumber ? `Pedido #${String(orderNumber).padStart(4, "0")}\n` : "";
+    const lines = cartLines
+      .map(
+        (l) =>
+          `• ${l.qty}x ${l.sku.displayName}${notes[l.sku.key] ? ` — _${notes[l.sku.key]}_` : ""} — ${money(l.sku.price * l.qty)}`
+      )
+      .join("\n");
+    const addrText = mode === "delivery" ? `\n📍 Dirección: ${address}` : "";
+    const deliveryNote = mode === "delivery" ? "\n🛵 Delivery — *a coordinar costo de envío*" : "\n🏠 Retira en el bar";
+    const paymentLabel = PAYMENT_METHODS.find((p) => p.id === payment)?.label || "";
+    const generalNoteText = generalNote.trim() ? `\n📝 Aclaración: ${generalNote.trim()}` : "";
+    const msg =
+      `🍺 *Nuevo pedido - Prost!*\n${orderTag}\n` +
+      `👤 Cliente: ${name}\n` +
+      `📱 Tel: ${phone}` +
+      deliveryNote +
+      addrText +
+      generalNoteText +
+      `\n\n*Pedido:*\n${lines}\n\n` +
+      `Subtotal: ${money(subtotal)}` +
+      (mode === "delivery" ? `\n_(el total final incluye el envío a confirmar)_` : `\n*Total: ${money(subtotal)}*`) +
+      `\n💳 Pago: *${paymentLabel}*`;
+    window.open(`https://wa.me/${PHONE}?text=${encodeURIComponent(msg)}`, "_blank");
+    setLastOrderNumber(orderNumber);
+    setSending(false);
+    setSent(true);
+  };
+
+  if (sent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: C.bg }}>
+        <div className="rounded-2xl p-8 max-w-sm w-full text-center border-4" style={{ backgroundColor: C.cream, borderColor: C.gold }}>
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: C.green }}>
+            <span style={{ fontSize: 32 }}>✅</span>
+          </div>
+          <h2 className="text-2xl mb-2 tracking-wide" style={{ ...oswald, color: C.dark }}>
+            PEDIDO ENVIADO{lastOrderNumber ? ` #${String(lastOrderNumber).padStart(4, "0")}` : ""}
+          </h2>
+          <p className="text-sm mb-6" style={{ color: "#5a4a3a" }}>
+            Te abrimos WhatsApp con tu pedido listo para mandar.{" "}
+            {mode === "delivery" ? "El bar te va a confirmar el costo del envío y el total por ahí." : "Cualquier cosa, el bar te confirma por ahí."}
+          </p>
+
+          <div className="rounded-xl p-4 mb-6" style={{ backgroundColor: C.creamPanel }}>
+            {!ratingSent ? (
+              <>
+                <p className="text-xs mb-2" style={{ ...oswald, color: "#5a4a3a" }}>¿CÓMO FUE TU EXPERIENCIA DE COMPRA?</p>
+                <div className="flex justify-center gap-1.5 mb-3">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setRating(n)}
+                      style={{ fontSize: 30, lineHeight: 1, color: C.gold }}
+                    >
+                      {rating && n <= rating ? "★" : "☆"}
+                    </button>
+                  ))}
+                </div>
+                {rating && (
+                  <>
+                    <textarea
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="¿Algo que quieras contarnos? (opcional)"
+                      rows={2}
+                      className="w-full rounded-lg px-3 py-2 text-sm outline-none border mb-2"
+                      style={{ backgroundColor: "white", borderColor: C.creamBorder, color: C.dark, resize: "none" }}
+                    />
+                    <button
+                      onClick={submitFeedback}
+                      className="w-full py-2.5 rounded-lg text-sm tracking-wide"
+                      style={{ ...oswald, backgroundColor: C.green, color: "white" }}
+                    >
+                      ENVIAR
+                    </button>
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="text-sm" style={{ color: "#5a4a3a" }}>¡Gracias por contarnos! 🙌</p>
+            )}
+          </div>
+
+          <button
+            onClick={() => {
+              setSent(false);
+              setCart({});
+              setMode("bar");
+              setAddress("");
+              setName("");
+              setPhone("");
+              setPayment(null);
+              setNotes({});
+              setGeneralNote("");
+              setLastOrderNumber(null);
+              setRating(null);
+              setComment("");
+              setRatingSent(false);
+            }}
+            className="w-full py-3 rounded-lg tracking-wide"
+            style={{ ...oswald, backgroundColor: C.rust, color: C.cream }}
+          >
+            HACER OTRO PEDIDO
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: C.bg, fontFamily: "'Inter', sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+      `}</style>
+
+      {/* Header */}
+      <header className="px-5 pt-8 pb-6 text-center relative overflow-hidden border-b-4" style={{ borderColor: C.gold }}>
+        <div className="mx-auto mb-2 relative" style={{ fontSize: 36 }}>🍺</div>
+        <h1 className="text-4xl tracking-widest relative" style={{ ...oswald, color: C.cream }}>PROST!</h1>
+        <p className="text-xs tracking-widest mt-1 relative" style={{ color: C.gold }}>CARTA & PEDIDOS</p>
+      </header>
+
+      {/* Menu */}
+      <main className="px-4 py-6 max-w-lg mx-auto" style={{ paddingBottom: "8rem" }}>
+        {MENU.map((cat) => (
+          <section key={cat.category} className="mb-7">
+            <div className="flex items-center gap-3 mb-1">
+              <h2 className="text-lg tracking-wide uppercase" style={{ ...oswald, color: C.gold }}>{cat.category}</h2>
+              <div className="flex-1 h-px" style={{ backgroundColor: C.border }} />
+            </div>
+            {cat.note && (
+              <p className="text-xs mb-3" style={{ color: C.muted }}>💡 {cat.note}</p>
+            )}
+            {!cat.note && <div className="mb-3" />}
+            <div className="space-y-2">
+              {cat.items.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-xl p-3.5 border"
+                  style={{ backgroundColor: C.panel, borderColor: C.border }}
+                >
+                  <p className="font-semibold text-sm" style={{ color: C.cream }}>{item.name}</p>
+                  {item.desc && <p className="text-xs mt-0.5 mb-2" style={{ color: C.muted }}>{item.desc}</p>}
+                  {!item.desc && <div className="mb-2" />}
+
+                  <div className="space-y-1.5">
+                    {item.variants.map((v, i) => {
+                      const key = `${item.id}__${i}`;
+                      const qty = cart[key] || 0;
+                      return (
+                        <div key={key} className="flex items-center justify-between gap-3">
+                          <div className="text-xs" style={{ color: C.gold }}>
+                            {item.variants.length > 1 && <span style={{ color: C.muted }}>{v.label} · </span>}
+                            <span style={oswald}>{money(v.price)}</span>
+                          </div>
+                          {qty === 0 ? (
+                            <button
+                              onClick={() => add(key)}
+                              className="shrink-0 rounded-lg px-3 py-1.5 text-xs tracking-wide"
+                              style={{ ...oswald, backgroundColor: C.rust, color: C.cream }}
+                            >
+                              AGREGAR
+                            </button>
+                          ) : (
+                            <div className="shrink-0 flex items-center gap-2 rounded-lg px-1" style={{ backgroundColor: C.border }}>
+                              <button onClick={() => remove(key)} className="p-1.5" style={{ color: C.cream }}><span style={{ fontSize: 16, lineHeight: 1 }}>−</span></button>
+                              <span className="text-sm w-4 text-center" style={{ color: C.cream }}>{qty}</span>
+                              <button onClick={() => add(key)} className="p-1.5" style={{ color: C.cream }}><span style={{ fontSize: 16, lineHeight: 1 }}>+</span></button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </main>
+
+      {/* Floating cart bar */}
+      {totalItems > 0 && !cartOpen && (
+        <button
+          onClick={() => setCartOpen(true)}
+          className="fixed bottom-4 left-4 right-4 max-w-lg mx-auto rounded-xl py-3.5 px-5 flex items-center justify-between shadow-lg tracking-wide"
+          style={{ ...oswald, backgroundColor: C.gold, color: C.dark }}
+        >
+          <span className="flex items-center gap-2"><span style={{ fontSize: 18 }}>🛒</span> {totalItems} {totalItems === 1 ? "ITEM" : "ITEMS"}</span>
+          <span>{money(subtotal)}</span>
+        </button>
+      )}
+
+      {/* Cart / checkout drawer */}
+      {cartOpen && (
+        <div className="fixed inset-0 z-50 flex items-end">
+          <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.6)" }} onClick={() => setCartOpen(false)} />
+          <div
+            className="relative w-full max-w-lg mx-auto rounded-t-2xl overflow-y-auto"
+            style={{ backgroundColor: C.cream, maxHeight: "88vh" }}
+          >
+            <div className="sticky top-0 px-5 py-4 flex items-center justify-between border-b" style={{ backgroundColor: C.cream, borderColor: C.creamBorder }}>
+              <h3 className="text-lg tracking-wide" style={{ ...oswald, color: C.dark }}>TU PEDIDO</h3>
+              <button onClick={() => setCartOpen(false)} style={{ color: C.dark }}><span style={{ fontSize: 20 }}>✕</span></button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              {cartLines.length === 0 ? (
+                <p className="text-sm text-center py-6" style={{ color: C.muted }}>Todavía no agregaste nada.</p>
+              ) : (
+                cartLines.map((l) => (
+                  <div key={l.sku.key}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: C.dark }}>{l.sku.displayName}</p>
+                        <p className="text-xs" style={{ color: C.muted }}>{money(l.sku.price)} c/u</p>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg px-1" style={{ backgroundColor: C.creamPanel2 }}>
+                        <button onClick={() => remove(l.sku.key)} className="p-1.5" style={{ color: C.dark }}><span style={{ fontSize: 16, lineHeight: 1 }}>−</span></button>
+                        <span className="text-sm w-4 text-center" style={{ color: C.dark }}>{l.qty}</span>
+                        <button onClick={() => add(l.sku.key)} className="p-1.5" style={{ color: C.dark }}><span style={{ fontSize: 16, lineHeight: 1 }}>+</span></button>
+                      </div>
+                    </div>
+                    {l.sku.needsNote && (
+                      <input
+                        value={notes[l.sku.key] || ""}
+                        onChange={(e) => setNotes((n) => ({ ...n, [l.sku.key]: e.target.value }))}
+                        placeholder={l.sku.notePlaceholder}
+                        className="w-full mt-1.5 rounded-lg px-3 py-2 text-xs outline-none border"
+                        style={{
+                          backgroundColor: "white",
+                          borderColor: !(notes[l.sku.key] || "").trim() ? C.rust : C.creamBorder,
+                          color: C.dark,
+                        }}
+                      />
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {cartLines.length > 0 && (
+              <>
+                <div className="px-5 py-4 border-t space-y-3" style={{ borderColor: C.creamBorder }}>
+                  <label className="block text-xs tracking-wide mb-1" style={{ ...oswald, color: "#5a4a3a" }}>TU NOMBRE</label>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="¿A nombre de quién?"
+                    className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border"
+                    style={{ backgroundColor: "white", borderColor: C.creamBorder, color: C.dark }}
+                  />
+
+                  <label className="block text-xs tracking-wide mb-1 mt-3" style={{ ...oswald, color: "#5a4a3a" }}>TU CELULAR</label>
+                  <input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="Ej: 2657 123456"
+                    type="tel"
+                    className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border"
+                    style={{ backgroundColor: "white", borderColor: C.creamBorder, color: C.dark }}
+                  />
+
+                  <label className="block text-xs tracking-wide mb-1 mt-3" style={{ ...oswald, color: "#5a4a3a" }}>ENTREGA</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setMode("bar");
+                        setAddress("");
+                      }}
+                      className="rounded-lg px-3 py-2.5 text-xs font-medium text-left border flex items-center gap-2"
+                      style={
+                        mode === "bar"
+                          ? { backgroundColor: C.green, color: "white", borderColor: C.green }
+                          : { backgroundColor: "white", color: C.dark, borderColor: C.creamBorder }
+                      }
+                    >
+                      <span style={{ fontSize: 14 }}>🏠</span>
+                      <span>Retiro en el bar<br /><span style={{ opacity: 0.8 }}>Gratis</span></span>
+                    </button>
+                    <button
+                      onClick={() => setMode("delivery")}
+                      className="rounded-lg px-3 py-2.5 text-xs font-medium text-left border flex items-center gap-2"
+                      style={
+                        mode === "delivery"
+                          ? { backgroundColor: C.green, color: "white", borderColor: C.green }
+                          : { backgroundColor: "white", color: C.dark, borderColor: C.creamBorder }
+                      }
+                    >
+                      <span style={{ fontSize: 14 }}>📍</span>
+                      <span>Delivery<br /><span style={{ opacity: 0.8 }}>A coordinar</span></span>
+                    </button>
+                  </div>
+
+                  {mode === "delivery" && (
+                    <div className="mt-2 space-y-2">
+                      <input
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="Dirección completa (calle, número, referencia)"
+                        className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border"
+                        style={{ backgroundColor: "white", borderColor: C.creamBorder, color: C.dark }}
+                      />
+                      <p className="text-xs" style={{ color: C.muted }}>
+                        El costo del envío te lo confirma el bar por WhatsApp según tu zona.
+                      </p>
+                    </div>
+                  )}
+
+                  <label className="block text-xs tracking-wide mb-1 mt-3" style={{ ...oswald, color: "#5a4a3a" }}>
+                    ACLARACIONES (opcional)
+                  </label>
+                  <textarea
+                    value={generalNote}
+                    onChange={(e) => setGeneralNote(e.target.value)}
+                    placeholder="¿Algo importante que debamos saber? Ej: sin cebolla, timbre roto, alergia, etc."
+                    rows={2}
+                    className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border"
+                    style={{ backgroundColor: "white", borderColor: C.creamBorder, color: C.dark, resize: "none" }}
+                  />
+
+                  <label className="block text-xs tracking-wide mb-1 mt-3" style={{ ...oswald, color: "#5a4a3a" }}>MEDIO DE PAGO</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PAYMENT_METHODS.map((p) => {
+                      const active = payment === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setPayment(p.id)}
+                          className="rounded-lg px-2 py-2.5 text-xs font-medium border flex flex-col items-center gap-1"
+                          style={
+                            active
+                              ? { backgroundColor: C.green, color: "white", borderColor: C.green }
+                              : { backgroundColor: "white", color: C.dark, borderColor: C.creamBorder }
+                          }
+                        >
+                          <span style={{ fontSize: 18 }}>{p.emoji}</span>
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="px-5 py-4 border-t space-y-1.5" style={{ borderColor: C.creamBorder, backgroundColor: C.creamPanel }}>
+                  <div className="flex justify-between text-sm" style={{ color: "#5a4a3a" }}>
+                    <span>Subtotal</span><span>{money(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg pt-1" style={{ ...oswald, color: C.dark }}>
+                    <span>{mode === "delivery" ? "SUBTOTAL (+ envío)" : "TOTAL"}</span>
+                    <span>{money(subtotal)}</span>
+                  </div>
+                  {mode === "delivery" && (
+                    <p className="text-xs pt-0.5" style={{ color: C.muted }}>
+                      El envío se suma después, según lo confirme el bar.
+                    </p>
+                  )}
+                </div>
+
+                <div className="px-5 py-4">
+                  <button
+                    onClick={sendOrder}
+                    disabled={!canSend || sending}
+                    className="w-full py-3.5 rounded-lg tracking-wide flex items-center justify-center gap-2"
+                    style={{
+                      ...oswald,
+                      backgroundColor: canSend && !sending ? C.green : C.disabled,
+                      color: "white",
+                      cursor: canSend && !sending ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    {sending ? "ENVIANDO..." : "ENVIAR PEDIDO POR WHATSAPP"}
+                  </button>
+                  {!canSend && (
+                    <p className="text-xs text-center mt-2" style={{ color: C.muted }}>
+                      {!name.trim()
+                        ? "Completá tu nombre"
+                        : !phone.trim()
+                        ? "Completá tu celular"
+                        : mode === "delivery" && !address.trim()
+                        ? "Completá la dirección"
+                        : !payment
+                        ? "Elegí un medio de pago"
+                        : missingNote
+                        ? "Completá la aclaración de la promo"
+                        : "Completá los datos"}{" "}
+                      para continuar
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
